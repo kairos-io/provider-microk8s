@@ -33,6 +33,6 @@ jobs:
       - run: echo $REGISTRY_PASSWORD | docker login -u $REGISTRY_USER --password-stdin $REGISTRY
       - run: env | grep ACTIONS_ID_TOKEN_REQUEST > .env
       - run: env | grep REGISTRY >> .env
-      - run: earthly --ci --push --platform=${{ matrix.platform }} +docker --MICROK8S_VERSION=${{ matrix.microk8s-version }} --BASE_IMAGE=${{ matrix.base-image }}
+      - run: earthly --ci --push --platform=${{ matrix.platform }} +docker --MICROK8S_CHANNEL=${{ matrix.microk8s-version }} --BASE_IMAGE=${{ matrix.base-image }}
       - run: earthly --ci +cosign --MICROK8S_CHANNEL=${{ matrix.microk8s-version }} --BASE_IMAGE=${{ matrix.base-image }}
 
