@@ -25,17 +25,23 @@ This provider will configure a Microk8s installation based on the cluster sectio
           `writeKubeconfig`: "/run/kubeconfig" 
           
           # Switch dqlite to use the internal IP of the Node instead of the 127.0.0.1 
-          `dqliteUseHostIPV4Addres`: true
+          `dqliteUseHostIPV4Address`: true
           
           # Uses the  DNS server entries from the host for the coredns configuration(reads from /etc/resolv.conf)
           `useHostDNS`: true
           
           # Specifies custom DNs server. Overrides the previous setting
           `DNS` : 75.75.74.74
+          # Customize calico settings
+          `calico`: 
+             # Enable IpinIP
+             `calicoIPinIP`: true
+             # Change the calico IP_AUTODETECTION_METHOD env . By default When forming a MicroK8s cluster, Calico is updated to use address that was used in the microk8s join command (IP_AUTODETECTION_METHOD=can-reach=10.10.10.10)
+             `calicoAutoDetect`: "cidr=10.10.128.0/18"  
   -  `initConfiguration`: Configuration only for the init node
-  
-                  addons:
-                    - dns
+
+           addons:
+              - dns
 
 ### Example
 ```yaml
@@ -52,6 +58,9 @@ cluster:
           writeKubeconfig: "/run/kubeconfig"
           dqliteUseHostIPV4Address: true
           useHostDNS: true
+          calico: 
+             calicoIPinIP: true
+             calicoAutoDetect: "cidr=10.10.128.0/18"
     initConfiguration:
                   addons:
                     - dns

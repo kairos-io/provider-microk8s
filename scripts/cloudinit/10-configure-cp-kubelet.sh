@@ -2,9 +2,12 @@
 
 #KUBELET_ARGS="${KUBELET_ARGS:-/var/snap/microk8s/current/args/kubelet}"
 
-#sed -i 's/node-labels="\(.*\)"/node-labels="node.kubernetes.io\/controlplane=controlplane,\1"/g' "${KUBELET_ARGS}"
+#vi "${KUBELET_ARGS}"
 
 #snap restart microk8s.daemon-kubelite
-#microk8s status --wait-ready
-NODE_NAME=$(microk8s kubectl get nodes -o json | jq -r .items[].metadata.name)
-microk8s kubectl label nodes $NODE_NAME node-role.kubernetes.io/control-plane=true
+microk8s status --wait-ready
+CP_NODE_NAMES=$(microk8s kubectl get nodes --selector='node.kubernetes.io/microk8s-controlplane' -o json |  jq -r .items[].metadata.name)
+for i in $CP_NODE_NAMES
+do
+microk8s kubectl label nodes $i node-role.kubernetes.io/control-plane=true --overwrite=true
+done
