@@ -23,6 +23,9 @@ type ClusterConfiguration struct {
 	UseHostDNS bool `json:"useHostDNS,omitempty"`
 	// Use specified dns server
 	DNS string `json:"dns,omitempty"`
+
+	CalicoConfiguration *CalicoConfiguration `json:"calico,omitempty"`
+
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -43,4 +46,12 @@ type InitConfiguration struct {
 
 	// List of addons to be enabled upon cluster creation
 	Addons []string `json:"addons,omitempty"`
+}
+
+type CalicoConfiguration struct {
+	// Calico IPinIP
+	CalicoIPinIP bool `json:"calicoIPinIP,omitempty"`
+
+	// Calico Autodetect
+	CalicoAutoDetect string `json:"calicoAutoDetect,omitempty"`
 }

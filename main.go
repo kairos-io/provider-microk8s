@@ -20,8 +20,10 @@ const (
 	scriptBasePath                  = "/opt/microk8s/scripts/"
 	installMicrok8sScript           = "00-install-microk8s.sh"
 	upgradeMicrok8sScript           = "00-upgrade-microk8s.sh"
-	configureApiServerScript        = "10-configure-apiserver.sh"
+//	configureApiServerScript        = "10-configure-apiserver.sh"
+	configureAltNamesScript         = "10-configure-alt-names.sh"
 	configureCPKubeletScript        = "10-configure-cp-kubelet.sh"
+	configureCalicoScript           = "10-configure-calico.sh"
 	configureClusterAgentPortScript = "10-configure-cluster-agent-port.sh"
 	configureDqlitePortScript       = "10-configure-dqlite-port.sh"
 	configureDqliteAddressScript    = "10-configure-dqlite-address.sh"
@@ -88,12 +90,14 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	var installCommands []string
 	var upgradeCommands []string
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
+	calicoConfigCommand := addCalicoConfigCommands(userConfig)
+	installCommands = append(installCommands,fmt.Sprintf("%s %v", calicoConfigCommand, true))
+
 	// figure out endpoint type
 	endpointType := "DNS"
 	if net.ParseIP(cluster.ControlPlaneHost) != nil {
 		endpointType = "IP"
 	}
-	installCommands = append(installCommands, fmt.Sprintf("%s %q %q", scriptPath(configureApiServerScript), endpointType, cluster.ControlPlaneHost))
 
 	if userConfig.ClusterConfiguration.PortCompatibilityRemap {
 		installCommands = append(installCommands, fmt.Sprintf("%s %q", scriptPath(configureClusterAgentPortScript), remappedClusterAgentPort))
@@ -105,14 +109,17 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 
 	// add the bootstrap token
 	installCommands = append(installCommands, fmt.Sprintf("microk8s add-node --token-ttl %v --token %q", tokenTTL, token))
-	installCommands = append(installCommands, scriptPath(configureCPKubeletScript))
 	installCommands = append(installCommands, fmt.Sprintf("%s %v %q", scriptPath(configureDNSScript), userConfig.ClusterConfiguration.UseHostDNS, userConfig.ClusterConfiguration.DNS))
+	installCommands = append(installCommands, fmt.Sprintf("%s %q %q", scriptPath(configureAltNamesScript), endpointType, cluster.ControlPlaneHost))
 
 	addons := parseAddons(userConfig)
 	installCommands = append(installCommands, fmt.Sprintf("%s %s", scriptPath(microk8sEnableScript), strings.Join(addons, " ")))
+	installCommands = append(installCommands, scriptPath(configureCPKubeletScript))
+
 	writeKubeConfigCommand := fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig)
 	installCommands = append(installCommands, writeKubeConfigCommand)
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
+	upgradeCommands = append(upgradeCommands,fmt.Sprintf("%s %v", calicoConfigCommand, false))
 	upgradeCommands = append(upgradeCommands, writeKubeConfigCommand)
 
 	return []yip.Stage{
@@ -129,19 +136,22 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	}
 }
 
+
+
 func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string, userConfig MicroK8sSpec) []yip.Stage {
 	var installCommands []string
 	var upgradeCommands []string
 	var clusterAgentPort string = defaultClusterAgentPort
 
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
+	calicoConfigCommand := addCalicoConfigCommands(userConfig)
+	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+
 	// figure out endpoint type
 	endpointType := "DNS"
 	if net.ParseIP(cluster.ControlPlaneHost) != nil {
 		endpointType = "IP"
 	}
-	installCommands = append(installCommands, fmt.Sprintf("%s %q %q", scriptPath(configureApiServerScript), endpointType, cluster.ControlPlaneHost))
-
 	if userConfig.ClusterConfiguration.PortCompatibilityRemap {
 		clusterAgentPort = remappedClusterAgentPort
 		installCommands = append(installCommands, fmt.Sprintf("%s %q", scriptPath(configureClusterAgentPortScript), remappedClusterAgentPort))
@@ -150,14 +160,20 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 	if userConfig.ClusterConfiguration.DqliteUseHostIPV4Address {
 		installCommands = append(installCommands, scriptPath(configureDqliteAddressScript))
 	}
-	installCommands = append(installCommands, scriptPath(configureCPKubeletScript))
 	// add join command
 	installCommands = append(installCommands, fmt.Sprintf("%s %q", scriptPath(microk8sJoinScript), fmt.Sprintf("%s:%s/%s", cluster.ControlPlaneHost, clusterAgentPort, token)))
+	//configure after join
+	installCommands = append(installCommands, fmt.Sprintf("%s %q %q", scriptPath(configureAltNamesScript), endpointType, cluster.ControlPlaneHost))
+
 	// add the bootstrap token
 	installCommands = append(installCommands, fmt.Sprintf("microk8s add-node --token-ttl %v --token %q", tokenTTL, token))
+	// label after join
+	installCommands = append(installCommands, scriptPath(configureCPKubeletScript))
 	installCommands = append(installCommands, fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig))
 
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
+	upgradeCommands = append(upgradeCommands,fmt.Sprintf("%s %v", calicoConfigCommand, false))
+
 	return []yip.Stage{
 
 		{
@@ -172,6 +188,7 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 		},
 	}
 }
+
 func generateWorkerJoinStages(cluster clusterplugin.Cluster, token string, userConfig MicroK8sSpec) []yip.Stage {
 
 	var installCommands []string
@@ -179,6 +196,10 @@ func generateWorkerJoinStages(cluster clusterplugin.Cluster, token string, userC
 	var clusterAgentPort string = defaultClusterAgentPort
 
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
+	calicoConfigCommand := addCalicoConfigCommands(userConfig)
+	installCommands = append(installCommands,fmt.Sprintf("%s %v", calicoConfigCommand, false))
+
+
 	if userConfig.ClusterConfiguration.PortCompatibilityRemap {
 		clusterAgentPort = remappedClusterAgentPort
 		installCommands = append(installCommands, fmt.Sprintf("%s %q", scriptPath(configureClusterAgentPortScript), clusterAgentPort))
@@ -187,6 +208,7 @@ func generateWorkerJoinStages(cluster clusterplugin.Cluster, token string, userC
 	installCommands = append(installCommands, fmt.Sprintf("%s %q --worker", scriptPath(microk8sJoinScript), fmt.Sprintf("%s:%s/%s", cluster.ControlPlaneHost, clusterAgentPort, token)))
 
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
+
 	return []yip.Stage{
 
 		{
@@ -219,6 +241,20 @@ func getBaseInstallCommands(cluster clusterplugin.Cluster, token string, install
 	installCommands = append(installCommands, "snap list |grep microk8s |cut -f 3 -d ' ' > /usr/local/.microk8s/installed")
 
 	return installCommands
+}
+func addCalicoConfigCommands(userConfig MicroK8sSpec) string {
+	var calicoConfigCommand string
+
+	if userConfig.ClusterConfiguration.CalicoConfiguration != nil {
+		// need to escape values like cidr for bash scripts
+		var replacer = strings.NewReplacer(
+			`/`, `\/`,
+		)
+		calicoConfig := userConfig.ClusterConfiguration.CalicoConfiguration
+		calicoConfigCommand = fmt.Sprintf("%s %v %q", scriptPath(configureCalicoScript), calicoConfig.CalicoIPinIP, replacer.Replace(calicoConfig.CalicoAutoDetect))
+
+	}
+	return calicoConfigCommand
 }
 func parseAddons(userConfig MicroK8sSpec) []string {
 
