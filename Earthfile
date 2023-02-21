@@ -1,7 +1,7 @@
 VERSION 0.6
 FROM alpine
 
-ARG BASE_IMAGE=quay.io/kairos/core-ubuntu-20-lts:v1.2.1
+ARG BASE_IMAGE=quay.io/kairos/core-ubuntu-20-lts:v1.5.0
 ARG IMAGE_REPOSITORY=quay.io/kairos
 
 ARG LUET_VERSION=0.32.4
