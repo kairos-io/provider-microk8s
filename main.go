@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/kairos-io/kairos/sdk/clusterplugin"
+	"github.com/kairos-io/kairos-sdk/clusterplugin"
 	yip "github.com/mudler/yip/pkg/schema"
 	"github.com/sirupsen/logrus"
 	"io"
@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	scriptBasePath                  = "/opt/microk8s/scripts/"
-	installMicrok8sScript           = "00-install-microk8s.sh"
-	upgradeMicrok8sScript           = "00-upgrade-microk8s.sh"
-//	configureApiServerScript        = "10-configure-apiserver.sh"
+	scriptBasePath        = "/opt/microk8s/scripts/"
+	installMicrok8sScript = "00-install-microk8s.sh"
+	upgradeMicrok8sScript = "00-upgrade-microk8s.sh"
+	//	configureApiServerScript        = "10-configure-apiserver.sh"
 	configureAltNamesScript         = "10-configure-alt-names.sh"
 	configureCPKubeletScript        = "10-configure-cp-kubelet.sh"
 	configureCalicoScript           = "10-configure-calico.sh"
@@ -91,7 +91,7 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	var upgradeCommands []string
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands,fmt.Sprintf("%s %v", calicoConfigCommand, true))
+	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, true))
 
 	// figure out endpoint type
 	endpointType := "DNS"
@@ -119,7 +119,7 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	writeKubeConfigCommand := fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig)
 	installCommands = append(installCommands, writeKubeConfigCommand)
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
-	upgradeCommands = append(upgradeCommands,fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	upgradeCommands = append(upgradeCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
 	upgradeCommands = append(upgradeCommands, writeKubeConfigCommand)
 
 	return []yip.Stage{
@@ -135,8 +135,6 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 		},
 	}
 }
-
-
 
 func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string, userConfig MicroK8sSpec) []yip.Stage {
 	var installCommands []string
@@ -172,7 +170,7 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 	installCommands = append(installCommands, fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig))
 
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
-	upgradeCommands = append(upgradeCommands,fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	upgradeCommands = append(upgradeCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
 
 	return []yip.Stage{
 
@@ -197,8 +195,7 @@ func generateWorkerJoinStages(cluster clusterplugin.Cluster, token string, userC
 
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands,fmt.Sprintf("%s %v", calicoConfigCommand, false))
-
+	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
 
 	if userConfig.ClusterConfiguration.PortCompatibilityRemap {
 		clusterAgentPort = remappedClusterAgentPort
