@@ -1,7 +1,7 @@
 VERSION 0.6
 FROM alpine
 
-ARG BASE_IMAGE=quay.io/kairos/core-ubuntu-20-lts:v2.0.0
+ARG BASE_IMAGE=quay.io/kairos/core-ubuntu-20-lts:v2.0.3
 ARG IMAGE_REPOSITORY=quay.io/kairos
 
 ARG LUET_VERSION=0.33.0
@@ -76,7 +76,7 @@ docker:
     ENV OS_REPO=${IMAGE_REPOSITORY}
     ENV OS_VERSION=v${MICROK8S_CHANNEL}_${VERSION}
     ENV OS_LABEL=${BASE_IMAGE_TAG}_v${MICROK8S_CHANNEL}_${VERSION}
-    RUN envsubst >/etc/os-release </usr/lib/os-release.tmpl
+    RUN envsubst >>/etc/os-release </usr/lib/os-release.tmpl
 
     SAVE IMAGE --push $IMAGE_REPOSITORY/${BASE_IMAGE_NAME}-microk8s:v${MICROK8S_CHANNEL}
     SAVE IMAGE --push $IMAGE_REPOSITORY/${BASE_IMAGE_NAME}-microk8s:v${MICROK8S_CHANNEL}_${VERSION}
