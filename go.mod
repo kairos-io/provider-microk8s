@@ -1,13 +1,12 @@
 module github.com/kairos-io/provider-microk8s
 
-go 1.18
+go 1.26.4
 
 require (
 	github.com/kairos-io/kairos-sdk v0.0.2-0.20230414094028-0c9d2bd9e6ae
 	github.com/mudler/yip v0.11.5-0.20230124143654-91e88dfb6648
 	github.com/sirupsen/logrus v1.9.0
 	sigs.k8s.io/yaml v1.3.0
-
 )
 
 require (
@@ -27,8 +26,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/twpayne/go-vfs v1.7.2 // indirect
 	github.com/twpayne/go-vfs/v4 v4.2.0 // indirect
-	golang.org/x/net v0.9.0 // indirect
-	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
