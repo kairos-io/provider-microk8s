@@ -21,7 +21,11 @@ go-deps:
     WORKDIR /build
     COPY go.mod  ./
     RUN go mod download
-    RUN apt-get update && apt-get install -y upx
+    # bullseye-security still lists upx-ucl 3.96-2+deb11u1, but the .deb is no
+    # longer in its pool, so plain `apt-get install upx` ends in a 404 and every
+    # build fails. 3.96-2, in bullseye main, is the same upstream release and is
+    # still served.
+    RUN apt-get update && apt-get install -y upx-ucl=3.96-2
     SAVE ARTIFACT go.mod AS LOCAL go.mod
     SAVE ARTIFACT go.sum AS LOCAL go.sum
 
