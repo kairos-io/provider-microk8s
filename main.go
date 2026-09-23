@@ -64,9 +64,16 @@ func clusterProvider(cluster clusterplugin.Cluster) yip.YipConfig {
 	var microk8sConfig MicroK8sSpec
 	token := createMicroK8SToken(cluster.ClusterToken)
 	if cluster.Options != "" {
-		userOptions, _ := kyaml.YAMLToJSON([]byte(cluster.Options))
-		_ = json.Unmarshal(userOptions, &microk8sConfig)
+		userOptions, err := kyaml.YAMLToJSON([]byte(cluster.Options))
+		if err != nil {
+			logrus.Fatalf("converting cluster config to json: %s", err)
+		}
+		if err := json.Unmarshal(userOptions, &microk8sConfig); err != nil {
+			logrus.Fatalf("parsing cluster config: %s", err)
+		}
 	}
+	microk8sConfig.setDefaults()
+
 	switch cluster.Role {
 	case clusterplugin.RoleInit:
 		stages = generateInitStages(cluster, token, microk8sConfig)
@@ -91,7 +98,7 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	var upgradeCommands []string
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, true))
+	installCommands = appendCalicoConfigCommand(installCommands, calicoConfigCommand, true)
 
 	// figure out endpoint type
 	endpointType := "DNS"
@@ -119,7 +126,7 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	writeKubeConfigCommand := fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig)
 	installCommands = append(installCommands, writeKubeConfigCommand)
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
-	upgradeCommands = append(upgradeCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	upgradeCommands = appendCalicoConfigCommand(upgradeCommands, calicoConfigCommand, false)
 	upgradeCommands = append(upgradeCommands, writeKubeConfigCommand)
 
 	return []yip.Stage{
@@ -143,7 +150,7 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	installCommands = appendCalicoConfigCommand(installCommands, calicoConfigCommand, false)
 
 	// figure out endpoint type
 	endpointType := "DNS"
@@ -170,7 +177,7 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 	installCommands = append(installCommands, fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig))
 
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
-	upgradeCommands = append(upgradeCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	upgradeCommands = appendCalicoConfigCommand(upgradeCommands, calicoConfigCommand, false)
 
 	return []yip.Stage{
 
@@ -195,7 +202,7 @@ func generateWorkerJoinStages(cluster clusterplugin.Cluster, token string, userC
 
 	installCommands = getBaseInstallCommands(cluster, token, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	installCommands = appendCalicoConfigCommand(installCommands, calicoConfigCommand, false)
 
 	if userConfig.ClusterConfiguration.PortCompatibilityRemap {
 		clusterAgentPort = remappedClusterAgentPort
@@ -253,6 +260,19 @@ func addCalicoConfigCommands(userConfig MicroK8sSpec) string {
 	}
 	return calicoConfigCommand
 }
+
+// appendCalicoConfigCommand appends the calico configuration command, unless the
+// user configured no calico at all. Appending it unconditionally would hand the
+// shell an empty script path followed by a bare boolean, which runs as `true` or
+// `false`, and `false` fails the whole stage.
+func appendCalicoConfigCommand(commands []string, calicoConfigCommand string, isInit bool) []string {
+	if calicoConfigCommand == "" {
+		return commands
+	}
+
+	return append(commands, fmt.Sprintf("%s %v", calicoConfigCommand, isInit))
+}
+
 func parseAddons(userConfig MicroK8sSpec) []string {
 
 	addons := make([]string, 0, len(userConfig.InitConfiguration.Addons))
