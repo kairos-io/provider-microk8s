@@ -27,6 +27,7 @@ const (
 	configureClusterAgentPortScript = "10-configure-cluster-agent-port.sh"
 	configureDqlitePortScript       = "10-configure-dqlite-port.sh"
 	configureDqliteAddressScript    = "10-configure-dqlite-address.sh"
+	configureContainerdProxyScript  = "10-configure-containerd-proxy.sh"
 	configureDNSScript              = "20-microk8s-configure-dns.sh"
 	microk8sJoinScript              = "20-microk8s-join.sh"
 	microk8sEnableScript            = "20-microk8s-enable.sh"
@@ -36,7 +37,7 @@ const (
 	remappedClusterAgentPort = "30000"
 	remappedDqlitePort       = "2379"
 
-	tokenTTL               = 315569260
+	defaultTokenTTL        = 315569260
 	ifmicroK8sInstalled    = "[ -d \"/var/snap/microk8s\" ]"
 	ifmicrok8sNotInstalled = "[ ! -d \"/var/snap/microk8s\" ]"
 )
@@ -64,9 +65,16 @@ func clusterProvider(cluster clusterplugin.Cluster) yip.YipConfig {
 	var microk8sConfig MicroK8sSpec
 	token := createMicroK8SToken(cluster.ClusterToken)
 	if cluster.Options != "" {
-		userOptions, _ := kyaml.YAMLToJSON([]byte(cluster.Options))
-		_ = json.Unmarshal(userOptions, &microk8sConfig)
+		userOptions, err := kyaml.YAMLToJSON([]byte(cluster.Options))
+		if err != nil {
+			logrus.Fatalf("converting cluster config to json: %s", err)
+		}
+		if err := json.Unmarshal(userOptions, &microk8sConfig); err != nil {
+			logrus.Fatalf("parsing cluster config: %s", err)
+		}
 	}
+	microk8sConfig.setDefaults()
+
 	switch cluster.Role {
 	case clusterplugin.RoleInit:
 		stages = generateInitStages(cluster, token, microk8sConfig)
@@ -89,9 +97,9 @@ func clusterProvider(cluster clusterplugin.Cluster) yip.YipConfig {
 func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig MicroK8sSpec) []yip.Stage {
 	var installCommands []string
 	var upgradeCommands []string
-	installCommands = getBaseInstallCommands(cluster, token, installCommands)
+	installCommands = getBaseInstallCommands(cluster, token, userConfig, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, true))
+	installCommands = appendCalicoConfigCommand(installCommands, calicoConfigCommand, true)
 
 	// figure out endpoint type
 	endpointType := "DNS"
@@ -108,8 +116,8 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	}
 
 	// add the bootstrap token
-	installCommands = append(installCommands, fmt.Sprintf("microk8s add-node --token-ttl %v --token %q", tokenTTL, token))
-	installCommands = append(installCommands, fmt.Sprintf("%s %v %q", scriptPath(configureDNSScript), userConfig.ClusterConfiguration.UseHostDNS, userConfig.ClusterConfiguration.DNS))
+	installCommands = append(installCommands, fmt.Sprintf("microk8s add-node --token-ttl %v --token %q", joinTokenTTL(userConfig), token))
+	installCommands = append(installCommands, fmt.Sprintf("%s %v %q", scriptPath(configureDNSScript), userConfig.ClusterConfiguration.UseHostDNS, dnsForwarders(userConfig)))
 	installCommands = append(installCommands, fmt.Sprintf("%s %q %q", scriptPath(configureAltNamesScript), endpointType, cluster.ControlPlaneHost))
 
 	addons := parseAddons(userConfig)
@@ -119,7 +127,7 @@ func generateInitStages(cluster clusterplugin.Cluster, token string, userConfig 
 	writeKubeConfigCommand := fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig)
 	installCommands = append(installCommands, writeKubeConfigCommand)
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
-	upgradeCommands = append(upgradeCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	upgradeCommands = appendCalicoConfigCommand(upgradeCommands, calicoConfigCommand, false)
 	upgradeCommands = append(upgradeCommands, writeKubeConfigCommand)
 
 	return []yip.Stage{
@@ -141,9 +149,9 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 	var upgradeCommands []string
 	var clusterAgentPort string = defaultClusterAgentPort
 
-	installCommands = getBaseInstallCommands(cluster, token, installCommands)
+	installCommands = getBaseInstallCommands(cluster, token, userConfig, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	installCommands = appendCalicoConfigCommand(installCommands, calicoConfigCommand, false)
 
 	// figure out endpoint type
 	endpointType := "DNS"
@@ -164,13 +172,13 @@ func generateControlPlaneJoinStages(cluster clusterplugin.Cluster, token string,
 	installCommands = append(installCommands, fmt.Sprintf("%s %q %q", scriptPath(configureAltNamesScript), endpointType, cluster.ControlPlaneHost))
 
 	// add the bootstrap token
-	installCommands = append(installCommands, fmt.Sprintf("microk8s add-node --token-ttl %v --token %q", tokenTTL, token))
+	installCommands = append(installCommands, fmt.Sprintf("microk8s add-node --token-ttl %v --token %q", joinTokenTTL(userConfig), token))
 	// label after join
 	installCommands = append(installCommands, scriptPath(configureCPKubeletScript))
 	installCommands = append(installCommands, fmt.Sprintf("%s %s", scriptPath(microk8sKubeConfigScript), userConfig.ClusterConfiguration.WriteKubeconfig))
 
 	upgradeCommands = append(upgradeCommands, scriptPath(upgradeMicrok8sScript))
-	upgradeCommands = append(upgradeCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	upgradeCommands = appendCalicoConfigCommand(upgradeCommands, calicoConfigCommand, false)
 
 	return []yip.Stage{
 
@@ -193,9 +201,9 @@ func generateWorkerJoinStages(cluster clusterplugin.Cluster, token string, userC
 	var upgradeCommands []string
 	var clusterAgentPort string = defaultClusterAgentPort
 
-	installCommands = getBaseInstallCommands(cluster, token, installCommands)
+	installCommands = getBaseInstallCommands(cluster, token, userConfig, installCommands)
 	calicoConfigCommand := addCalicoConfigCommands(userConfig)
-	installCommands = append(installCommands, fmt.Sprintf("%s %v", calicoConfigCommand, false))
+	installCommands = appendCalicoConfigCommand(installCommands, calicoConfigCommand, false)
 
 	if userConfig.ClusterConfiguration.PortCompatibilityRemap {
 		clusterAgentPort = remappedClusterAgentPort
@@ -229,7 +237,7 @@ func createMicroK8SToken(token string) string {
 	}
 	return hex.EncodeToString(md5.Sum(nil))
 }
-func getBaseInstallCommands(cluster clusterplugin.Cluster, token string, installCommands []string) []string {
+func getBaseInstallCommands(cluster clusterplugin.Cluster, token string, userConfig MicroK8sSpec, installCommands []string) []string {
 
 	// run the script to install microk8s
 	installCommands = append(installCommands, scriptPath(installMicrok8sScript))
@@ -237,7 +245,37 @@ func getBaseInstallCommands(cluster clusterplugin.Cluster, token string, install
 	installCommands = append(installCommands, "mkdir -p /usr/local/.microk8s")
 	installCommands = append(installCommands, "snap list |grep microk8s |cut -f 3 -d ' ' > /usr/local/.microk8s/installed")
 
+	// containerd has to learn about the proxy before anything joins a cluster
+	// or pulls an image, so this sits with the install and runs on every role.
+	if command, ok := containerdProxyCommand(userConfig); ok {
+		installCommands = append(installCommands, command)
+	}
+
 	return installCommands
+}
+
+// containerdProxyCommand builds the call to 10-configure-containerd-proxy.sh,
+// whose usage line is "$0 $http_proxy $https_proxy $no_proxy". It reports false
+// when the user set none of the three, so a node with no proxy does not restart
+// containerd for an empty configuration block.
+func containerdProxyCommand(userConfig MicroK8sSpec) (string, bool) {
+	initConfig := userConfig.InitConfiguration
+	if initConfig.HTTPProxy == "" && initConfig.HTTPSProxy == "" && initConfig.NoProxy == "" {
+		return "", false
+	}
+
+	return fmt.Sprintf("%s %q %q %q", scriptPath(configureContainerdProxyScript),
+		initConfig.HTTPProxy, initConfig.HTTPSProxy, initConfig.NoProxy), true
+}
+
+// joinTokenTTL honours joinTokenTTLInSecs, which types.go documents as
+// defaulting to ten years. The default used to be the only value.
+func joinTokenTTL(userConfig MicroK8sSpec) int64 {
+	if ttl := userConfig.InitConfiguration.JoinTokenTTLInSecs; ttl > 0 {
+		return ttl
+	}
+
+	return defaultTokenTTL
 }
 func addCalicoConfigCommands(userConfig MicroK8sSpec) string {
 	var calicoConfigCommand string
@@ -253,17 +291,81 @@ func addCalicoConfigCommands(userConfig MicroK8sSpec) string {
 	}
 	return calicoConfigCommand
 }
+
+// appendCalicoConfigCommand appends the calico configuration command, unless the
+// user configured no calico at all. Appending it unconditionally would hand the
+// shell an empty script path followed by a bare boolean, which runs as `true` or
+// `false`, and `false` fails the whole stage.
+func appendCalicoConfigCommand(commands []string, calicoConfigCommand string, isInit bool) []string {
+	if calicoConfigCommand == "" {
+		return commands
+	}
+
+	return append(commands, fmt.Sprintf("%s %v", calicoConfigCommand, isInit))
+}
+
 func parseAddons(userConfig MicroK8sSpec) []string {
 
 	addons := make([]string, 0, len(userConfig.InitConfiguration.Addons))
 	for _, addon := range userConfig.InitConfiguration.Addons {
 		// if dns is enabled by the user, we skip it in the list since we always enable by default
-		if strings.Contains(addon, "dns") {
+		if isDNSAddon(addon) {
 			continue
 		}
 		addons = append(addons, fmt.Sprintf("%q", addon))
 	}
 	return addons
+}
+
+// isDNSAddon reports whether an "addons" entry names the dns addon, with or
+// without arguments. The name is what the entry carries before the colon, so
+// that this and dnsAddonForwarders cannot disagree about which entry the dns
+// addon is: parseAddons drops exactly the entries whose arguments
+// dnsAddonForwarders picks up.
+func isDNSAddon(addon string) bool {
+	name := addon
+	if i := strings.Index(name, ":"); i >= 0 {
+		name = name[:i]
+	}
+
+	return strings.TrimSpace(name) == "dns"
+}
+
+// dnsAddonForwarders returns the arguments of an "addons" entry of the form
+// "dns:<forwarders>", which is microk8s's own spelling for pointing CoreDNS at
+// specific upstream resolvers. parseAddons drops that entry because
+// 20-microk8s-configure-dns.sh already enables the addon, so without this the
+// arguments would go with it.
+func dnsAddonForwarders(userConfig MicroK8sSpec) string {
+	for _, addon := range userConfig.InitConfiguration.Addons {
+		if !isDNSAddon(addon) {
+			continue
+		}
+		if i := strings.Index(addon, ":"); i >= 0 {
+			return strings.TrimSpace(addon[i+1:])
+		}
+	}
+
+	return ""
+}
+
+// dnsForwarders picks the upstream resolvers to hand to
+// 20-microk8s-configure-dns.sh. clusterConfiguration.dns is the documented key
+// and wins; the addon spelling is honoured when that key is unset. An override
+// is logged rather than applied silently, because the two keys disagreeing is a
+// configuration mistake the operator cannot otherwise see.
+func dnsForwarders(userConfig MicroK8sSpec) string {
+	fromAddon := dnsAddonForwarders(userConfig)
+	fromKey := userConfig.ClusterConfiguration.DNS
+
+	if fromKey == "" {
+		return fromAddon
+	}
+	if fromAddon != "" && fromAddon != fromKey {
+		logrus.Printf("clusterConfiguration.dns %q overrides the addons entry dns:%s", fromKey, fromAddon)
+	}
+
+	return fromKey
 }
 func scriptPath(scriptName string) string {
 	return filepath.Join(scriptBasePath, scriptName)

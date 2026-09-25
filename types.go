@@ -55,3 +55,16 @@ type CalicoConfiguration struct {
 	// Calico Autodetect
 	CalicoAutoDetect string `json:"calicoAutoDetect,omitempty"`
 }
+
+// setDefaults fills in the optional sections of the user configuration.
+// `cluster.config` is optional, and so is every section inside it, so without
+// this the rest of the provider would have to nil check every read.
+func (s *MicroK8sSpec) setDefaults() {
+	if s.ClusterConfiguration == nil {
+		s.ClusterConfiguration = &ClusterConfiguration{}
+	}
+
+	if s.InitConfiguration == nil {
+		s.InitConfiguration = &InitConfiguration{}
+	}
+}
