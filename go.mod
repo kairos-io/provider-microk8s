@@ -5,9 +5,8 @@ go 1.18
 require (
 	github.com/kairos-io/kairos-sdk v0.0.2-0.20230414094028-0c9d2bd9e6ae
 	github.com/mudler/yip v0.11.5-0.20230124143654-91e88dfb6648
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.1
 	sigs.k8s.io/yaml v1.3.0
-
 )
 
 require (
